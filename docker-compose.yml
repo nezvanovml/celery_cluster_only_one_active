@@ -15,7 +15,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    command: python3 -m celery -A app.worker:celery_app worker -l info -Q one_by_one --concurrency 1 -n worker_1
+    command: python3 -m celery -A app.worker:celery_app worker -l info --concurrency 1 -n worker_1
 
   celery_worker_2:
     image: starlette_celery_example
@@ -34,11 +34,18 @@ services:
   rabbitmq:
     image: rabbitmq:3-management
     ports:
-      # Expose the port for the worker to add/get tasks
       - 5672:5672
-      # OPTIONAL: Expose the GUI port
       - 15672:15672
     environment:
       RABBITMQ_DEFAULT_USER: user
       RABBITMQ_DEFAULT_PASS: password
       RABBITMQ_DEFAULT_VHOST: myhost
+
+  flower:
+    image: starlette_celery_example
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - 5555:5555
+    command: python3 -m celery -A app.worker:celery_app flower --port=5555
