@@ -1,0 +1,44 @@
+version: '3.6'
+
+services:
+  web_app:
+    image: starlette_celery_example
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: python3 -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --log-level debug
+    ports:
+      - 8000:8000
+
+  celery_worker_1:
+    image: starlette_celery_example
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: python3 -m celery -A app.worker:celery_app worker -l info -Q one_by_one --concurrency 1 -n worker_1
+
+  celery_worker_2:
+    image: starlette_celery_example
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: python3 -m celery -A app.worker:celery_app worker -l info --concurrency 1 -n worker_2
+
+  celery_worker_3:
+    image: starlette_celery_example
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: python3 -m celery -A app.worker:celery_app worker -l info --concurrency 1 -n worker_3
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    ports:
+      # Expose the port for the worker to add/get tasks
+      - 5672:5672
+      # OPTIONAL: Expose the GUI port
+      - 15672:15672
+    environment:
+      RABBITMQ_DEFAULT_USER: user
+      RABBITMQ_DEFAULT_PASS: password
+      RABBITMQ_DEFAULT_VHOST: myhost
