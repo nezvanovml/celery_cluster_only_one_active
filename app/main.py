@@ -3,6 +3,7 @@ from starlette.responses import JSONResponse
 from starlette.requests import Request
 from starlette.responses import Response
 from starlette.routing import Route
+from starlette.templating import Jinja2Templates
 
 from celery import Celery
 from celery.app.control import Inspect
@@ -13,51 +14,36 @@ import time
 
 import random
 
+TARGET_QUEUE_NAME = "one_by_one"
+
+templates = Jinja2Templates(directory='app/templates')
+
 logger = logging.getLogger()
 logger.setLevel(logging.DEBUG)
 
-async def add_task(request: Request) -> Response:
-    task_id = background.apply_async(queue="one_by_one")
-    logging.info("Task id: %s", task_id)
-    response = JSONResponse({"task_id": str(task_id)})
-    return response
+async def homepage(request):
+    if request.query_params.get("run_task"):
+        task_id = background.apply_async(queue="one_by_one")
+        logging.info("Task id: %s", task_id)
 
-async def ping(request: Request) -> Response:
-    response = JSONResponse(inspection.ping())
-    return response
+    if worker := request.query_params.get("set_active"):
+        logging.info(f"Setting as active: {worker}")
+        controller.assign_queue(worker)
 
-async def heartbeat(request: Request) -> Response:
-    response = JSONResponse(inspection.heartbeat())
-    return response
-
-async def query_task(request: Request) -> Response:
-    response = JSONResponse(inspection.query_task())
-    return response
-
-async def stats(request: Request) -> Response:
-    response = JSONResponse(inspection.stats())
-    return response
+    controller.update_worker_status()
+    res = controller.report()
+    logger.warning(res)
+    return templates.TemplateResponse(request, 'index.html', {'context': res})
 
 async def active_queues(request: Request) -> Response:
     response = JSONResponse(inspection.active_queues())
     return response
 
-async def cancel_consumer(request: Request) -> Response:
-    response = JSONResponse(celery_app.control.cancel_consumer("one_by_one"))
-    return response
-
-
-
 
 
 app = Starlette(debug=True, routes=[
-    Route('/add_task', add_task),
-    Route('/ping', ping),
-    Route('/heartbeat', heartbeat),
-    Route('/stats', stats),
-    Route('/query_task', query_task),
-    Route('/cancel_consumer', cancel_consumer),
-    Route('/active_queues', active_queues)
+    Route('/active_queues', active_queues),
+    Route('/', homepage)
 ])
 
 celery_app = Celery()
@@ -68,61 +54,96 @@ celery_app.config_from_object({
 
 class CeleryWorkersController:
     def __init__(self, celery_app: Celery):
+        self.online_workers = set()
+        self.offline_workers = set()
         self.active_workers = set()
-        self.inactive_workers = set()
-        self.current_worker = None
         self.inspection_object = Inspect(app=celery_app)
         self.control_object = celery_app.control
 
         self.update_worker_status()
 
     def update_worker_status(self):
-        ping_result = self.inspection_object.ping()
-        if ping_result:
-            _active_workers = set(ping_result.keys())
-            _inactive_workers = self.active_workers.difference(_active_workers)
-            self.active_workers = _active_workers
-            _resumed_workers = self.inactive_workers.intersection(_active_workers)
-            self.inactive_workers.difference_update(_active_workers)
+        result = self.inspection_object.active_queues()
+        if result:
+            _online_workers = set()
+            for _worker, _queues in result.items():
+                _online_workers.add(_worker)
+                for _queue in _queues:
+                    if _queue.get("name") != TARGET_QUEUE_NAME:
+                        continue
 
-            self.inactive_workers.update(_inactive_workers)
-            logger.debug(f"Неактивные: {self.inactive_workers}, Активные: {self.active_workers}")
+                    self.active_workers.add(_worker)
+
+            _offline_workers = self.online_workers.difference(_online_workers)
+            self.online_workers = _online_workers
+            _resumed_workers = self.offline_workers.intersection(_online_workers)
+            self.offline_workers.difference_update(_online_workers)
+            self.offline_workers.update(_offline_workers)
+            logger.warning(f"Онлайн: {_online_workers}, оффлайн: {_offline_workers}")
             if len(_resumed_workers):
-                logger.info(f"Вернулись в работу: {_resumed_workers}")
+                logger.warning(f"Вернулись в работу: {_resumed_workers}")
+
+            self.active_workers = self.active_workers.difference(self.offline_workers)
+
+            match len(self.active_workers):
+                case 0:
+                    logger.warning("Нет назначенных воркеров.")
+                case 1:
+                    pass
+                case _:
+                    logger.warning("Количество воркеров больше 1.")
+
         else:
-            logger.error("ERROR PING ")
+            logger.error("Can not receive queues.")
 
     def deassign_queue(self) -> None:
-        self.current_worker = None
-        self.control_object.cancel_consumer("one_by_one")
+        self.active_workers.clear()
+        self.control_object.cancel_consumer(TARGET_QUEUE_NAME)
 
-    def assign_queue(self) -> bool:
-        if self.current_worker:
-            logger.warning("Worker already assigned")
-            return False
-        self.current_worker = self.select_worker()
-        logger.info(self.current_worker)
-        if not self.current_worker:
-            logger.critical("Can not assign worker - no available workers")
-            return False
-        self.control_object.add_consumer("one_by_one", destination=[self.current_worker])
+    def assign_queue(self, target_worker=None) -> bool:
+        if not target_worker:
+            target_worker = self.select_random_worker()
+            if not target_worker:
+                logger.error(f"Не удалось выбрать воркер")
+                return
+        else:
+            if not target_worker in self.online_workers:
+                logger.error(f"Невозможно назначить активным данный воркер: {target_worker}")
+                return False
+
+        if target_worker in self.active_workers:
+            logger.warning(f"Воркер уже назначен: {self.active_workers}")
+            return True
+
+        print(target_worker)
+        self.deassign_queue()
+        self.active_workers.add(target_worker)
+        logger.warning(f"Назначаем воркера: {self.active_workers}")
+        self.control_object.add_consumer(TARGET_QUEUE_NAME, destination=list(self.active_workers))
         return True
 
-    def select_worker(self):
-        if not len(self.active_workers):
+
+    def select_random_worker(self):
+        if not len(self.online_workers):
             return None
-        return random.sample(list(self.active_workers), 1)[0]
+        return random.sample(list(self.online_workers), 1)[0]
 
     def run(self) -> bool:
         self.update_worker_status()
-        if self.current_worker and self.current_worker in self.active_workers:
+        if len(self.active_workers) and self.active_workers.issubset(self.online_workers):
             return True
         else:
-            self.deassign_queue()
-            if not self.assign_queue():
-                return False
+            self.assign_queue()
             return True
 
+    def report(self) -> list:
+        res = []
+        for worker in self.online_workers:
+            res.append({"name": worker, "is_active": True if worker in self.active_workers else False, "is_online": True if worker in self.online_workers else False})
+        for worker in self.offline_workers:
+            res.append({"name": worker, "is_active": True if worker in self.active_workers else False, "is_online": True if worker in self.online_workers else False})
+
+        return sorted(res, key=lambda d: d['name'])
 
 
 

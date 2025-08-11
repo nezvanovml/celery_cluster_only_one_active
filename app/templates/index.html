@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{# переопределяем блок `title` базового шаблона #}
+{% block title %}Управление воркерами{% endblock %}
+{% block style %}
+table, th, td {
+    border: 1px solid black;
+    padding-top: 1em;
+vertical-align: top;
+}
+li {
+    border-bottom: 1px solid black;
+}
+
+{% endblock %}
+{# переопределяем блок `content` базового шаблона #}
+{% block content %}
+
+
+<div class="container text-center ">
+  <div class="row m-10">
+    {% for worker in context %}
+      <div class="col">
+        <h1>{{ worker.name }}</h1>
+          {% if worker.is_active %}<span class="badge text-bg-primary">Активный</span>{% endif %}
+          {% if worker.is_online %}<span class="badge text-bg-success">Онлайн</span>{% endif %}
+          {% if not worker.is_online %}<span class="badge text-bg-danger">Оффлайн</span>{% endif %}
+          <a href="?set_active={{ worker.name }}"><button type="button" class="btn btn-primary">Назначить активным</button></a>
+      </div>
+    {% endfor %}
+  </div>
+
+    <div class="row m-10">
+    <div class="col">
+        <a href="?run_task=1"><button type="button" class="btn btn-primary">Запустить задачу</button></a>
+    </div>
+  </div>
+</div>
+
+
+
+
+
+{% endblock %}
