@@ -23,7 +23,7 @@ logger.setLevel(logging.DEBUG)
 
 async def homepage(request):
     if request.query_params.get("run_task"):
-        task_id = background.apply_async(queue="one_by_one")
+        task_id = background.apply_async(queue="one_by_one", args=[1, 2, 3], kwargs={'param': {"key": "value"}})
         logging.info("Task id: %s", task_id)
 
     if worker := request.query_params.get("set_active"):
@@ -96,6 +96,9 @@ class CeleryWorkersController:
 
         else:
             logger.error("Can not receive queues.")
+            self.offline_workers.update(self.online_workers)
+            self.online_workers.clear()
+            self.active_workers.clear()
 
     def deassign_queue(self) -> None:
         self.active_workers.clear()
@@ -147,7 +150,7 @@ controller = CeleryWorkersController(celery_app)
 inspection = Inspect(app=celery_app)
 
 @celery_app.task()
-def background() -> str:
+def background(*args, **kwargs) -> str:
     print("start...")
     time.sleep(10)
     return "Hello from background task..."
