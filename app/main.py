@@ -30,7 +30,7 @@ async def homepage(request):
         logging.info(f"Setting as active: {worker}")
         controller.assign_queue(worker)
 
-    controller.update_worker_status()
+
     res = controller.report()
     logger.warning(res)
     return templates.TemplateResponse(request, 'index.html', {'context': res})
@@ -66,6 +66,7 @@ class CeleryWorkersController:
         result = self.inspection_object.active_queues()
         if result:
             _online_workers = set()
+            self.active_workers.clear()
             for _worker, _queues in result.items():
                 _online_workers.add(_worker)
                 for _queue in _queues:
@@ -83,7 +84,7 @@ class CeleryWorkersController:
             if len(_resumed_workers):
                 logger.warning(f"Вернулись в работу: {_resumed_workers}")
 
-            self.active_workers = self.active_workers.difference(self.offline_workers)
+            # self.active_workers = self.active_workers.difference(self.offline_workers)
 
             match len(self.active_workers):
                 case 0:
@@ -111,10 +112,6 @@ class CeleryWorkersController:
                 logger.error(f"Невозможно назначить активным данный воркер: {target_worker}")
                 return False
 
-        if target_worker in self.active_workers:
-            logger.warning(f"Воркер уже назначен: {self.active_workers}")
-            return True
-
         print(target_worker)
         self.deassign_queue()
         self.active_workers.add(target_worker)
@@ -138,11 +135,9 @@ class CeleryWorkersController:
 
     def report(self) -> list:
         res = []
-        for worker in self.online_workers:
+        self.update_worker_status()
+        for worker in self.online_workers.union(self.offline_workers):
             res.append({"name": worker, "is_active": True if worker in self.active_workers else False, "is_online": True if worker in self.online_workers else False})
-        for worker in self.offline_workers:
-            res.append({"name": worker, "is_active": True if worker in self.active_workers else False, "is_online": True if worker in self.online_workers else False})
-
         return sorted(res, key=lambda d: d['name'])
 
 
@@ -156,7 +151,6 @@ def background() -> str:
     print("start...")
     time.sleep(10)
     return "Hello from background task..."
-
 
 
 @before_task_publish.connect

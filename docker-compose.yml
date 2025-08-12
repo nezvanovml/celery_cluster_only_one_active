@@ -10,14 +10,23 @@ services:
     ports:
       - 8001:8000
 
-#  web_app_2:
-#    image: starlette_celery_example
-#    build:
-#      context: .
-#      dockerfile: Dockerfile
-#    command: python3 -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --log-level debug
-#    ports:
-#      - 8002:8000
+  web_app_2:
+    image: starlette_celery_example
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: python3 -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --log-level debug
+    ports:
+      - 8002:8000
+
+  web_app_3:
+    image: starlette_celery_example
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: python3 -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --log-level debug
+    ports:
+      - 8003:8000
 
   celery_worker_1:
     image: starlette_celery_example
@@ -33,12 +42,12 @@ services:
       dockerfile: Dockerfile
     command: python3 -m celery -A app.worker:celery_app worker -l info --concurrency 1 -n worker_2
 
-#  celery_worker_3:
-#    image: starlette_celery_example
-#    build:
-#      context: .
-#      dockerfile: Dockerfile
-#    command: python3 -m celery -A app.worker:celery_app worker -l info --concurrency 1 -n worker_3
+  celery_worker_3:
+    image: starlette_celery_example
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: python3 -m celery -A app.worker:celery_app worker -l info --concurrency 1 -n worker_3
 
   rabbitmq:
     image: rabbitmq:3-management
