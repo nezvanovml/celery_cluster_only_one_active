@@ -23,7 +23,7 @@ logger.setLevel(logging.DEBUG)
 
 async def homepage(request):
     if request.query_params.get("run_task"):
-        task_id = background.apply_async(queue="one_by_one", args=[1, 2, 3], kwargs={'param': {"key": "value"}})
+        task_id = background.apply_async(queue=TARGET_QUEUE_NAME, args=[1, 2, 3], kwargs={'param': {"key": "value"}})
         logging.info("Task id: %s", task_id)
 
     if worker := request.query_params.get("set_active"):
