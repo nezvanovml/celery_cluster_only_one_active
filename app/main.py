@@ -39,16 +39,37 @@ async def active_queues(request: Request) -> Response:
     response = JSONResponse(inspection.active_queues())
     return response
 
+# общая статистика по воркеру
+async def stats(request: Request) -> Response:
+    response = JSONResponse(inspection.stats())
+    return response
+
+# Получение выполняемых в текущий момент задач
+async def active(request: Request) -> Response:
+    response = JSONResponse(inspection.active())
+    return response
+
+
 
 
 app = Starlette(debug=True, routes=[
     Route('/active_queues', active_queues),
-    Route('/', homepage)
+    Route('/', homepage),
+    Route('/stats', stats),
+    Route('/report', report),
+    Route('/scheduled', scheduled),
+    Route('/reserved', reserved),
+    Route('/registered', registered),
+    Route('/active', active)
+
 ])
 
 celery_app = Celery()
 celery_app.config_from_object({
-    "broker_url": 'amqp://user:password@rabbitmq:5672/myhost',
+    "broker_url": 'sentinel://sentinel-host-1.local:26380/1;sentinel://sentinel-host-2.local:26381/1;sentinel://sentinel-host-3.local:26382/1',
+    "result_backend": 'sentinel://sentinel-host-1.local:26380/2;sentinel://sentinel-host-2.local:26381/2;sentinel://sentinel-host-3.local:26382/2',
+    "broker_transport_options": {'master_name': "celery"},
+    "result_backend_transport_options": {'master_name': "celery"},
     "worker_prefetch_multiplier": 1,
 })
 
