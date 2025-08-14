@@ -56,10 +56,6 @@ app = Starlette(debug=True, routes=[
     Route('/active_queues', active_queues),
     Route('/', homepage),
     Route('/stats', stats),
-    Route('/report', report),
-    Route('/scheduled', scheduled),
-    Route('/reserved', reserved),
-    Route('/registered', registered),
     Route('/active', active)
 
 ])
